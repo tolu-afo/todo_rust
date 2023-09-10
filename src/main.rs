@@ -68,7 +68,7 @@ fn main() {
     // todo "class" that keeps track of tasks name, and description, 
     // and whether it has been completed. bonus points for timing
 
-    // TODO: Create serliazation and write list to disk (serde and serde_json)
+    // TODO: Create serlization and write list to disk (serde and serde_json)
     
     let mut list = TodoList::new();
 
