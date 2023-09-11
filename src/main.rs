@@ -1,7 +1,13 @@
 use inquire::{Text, InquireError, Select, list_option::ListOption};
 use std::fmt::{self, Formatter};
+use std::fs::{self, OpenOptions, File};
+use std::io::Write;
+use serde::{Serialize, Deserialize};
+use serde_json::{Result, to_string};
+use std::path::Path;
 
 #[derive(Debug)]
+#[derive(Serialize, Deserialize)]
 struct Todo {
     // a Todo Entry
     title: String,
@@ -35,6 +41,7 @@ impl fmt::Display for Todo {
 
 
 #[derive(Debug)]
+#[derive(Serialize, Deserialize)]
 struct TodoList {
     todos: Vec<Todo>,
 }
@@ -61,26 +68,74 @@ impl TodoList {
 
         self.new_todo(title, desc);
     }
+
+    fn save_list(&self, file: File) -> std::io::Result<()> {
+        // serialize the list into json
+        // write to a *.json file
+        let json = serde_json::to_string(&self.todos);
+        let mut file = OpenOptions::new()
+            .append(true)
+            .open("lists/todo_list.json")?;
+        file.write_all(json?.as_bytes()).unwrap();
+        Ok(())
+    }
+
+    fn save(&self) {
+        let file = create_file("lists/todo_list.json");
+        let _ = self.save_list(file);
+    }
+
+    fn load_list(&self) {
+        
+    }
 }
 
+fn create_file (fname: &str) -> File {
+    
+    let path = Path::new(fname);
+    
+    if path.exists() == false {
+        let mut file = File::create(fname).unwrap();
+        file
+    }else {
+        // TODO: open the file that already exists to pass to the save_list function
+    }
+}   
+
+fn create_folder (dirname: &str) {
+    let path = Path::new(dirname);
+
+    if path.exists() == false {
+        fs::create_dir(dirname).unwrap();
+    }
+}
 fn main() {
     // Goal: Terminal based ToDo app
     // todo "class" that keeps track of tasks name, and description, 
     // and whether it has been completed. bonus points for timing
-
-    // TODO: Create serlization and write list to disk (serde and serde_json)
     
+    // TODO: Create serialization and write list to disk (serde and serde_json)
+    
+    create_folder("lists");
+
     let mut list = TodoList::new();
 
     // if cont == true loop continues
     let cont: bool = true;
 
     while cont {
-        let options: Vec<_> = vec!["add new todo".to_string(), "close list".to_string()].into_iter().chain(list.todos.iter().map(ToString::to_string)).collect();
+        let options: Vec<_> = vec!["save list".to_string(), "add new todo".to_string(), "close list".to_string()]
+            .into_iter()
+            .chain(list
+                    .todos
+                    .iter()
+                    .map(ToString::to_string))
+            .collect();
 
-        let ans: Result<_, InquireError> = Select::new("What do you want to do?", options).raw_prompt();
+        let ans = Select::new("What do you want to do?", options).raw_prompt();
 
         match ans {
+            Ok(ListOption{value, ..}) if value == "save list" => list.save(),
             Ok(ListOption{value, ..}) if value == "add new todo" => list.create_todo(),
             Ok(ListOption{value, ..}) if value == "close list" => break,
             Ok(ListOption{index , ..}) => list.get_todo(index-2).check(),
