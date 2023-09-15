@@ -1,4 +1,6 @@
+use clap::ValueHint;
 use inquire::{Text, InquireError, Select, list_option::ListOption};
+use core::panic;
 use std::fmt::{self, Formatter};
 use std::fs::{self, OpenOptions, File};
 use std::io::Write;
@@ -40,16 +42,17 @@ impl fmt::Display for Todo {
     }
 }
 
-
+// TODO: Make a multi todo list possible, add identifiers for lists, make saving lists and loading lists work with multiple, and add a switch list option.
 #[derive(Debug)]
 #[derive(Serialize, Deserialize)]
 struct TodoList {
+    name: String,
     todos: Vec<Todo>,
 }
 
 impl TodoList {
-    fn new() -> TodoList {
-        let new_todo_list: TodoList = TodoList {todos: Vec::new()};
+    fn new(name: &str) -> TodoList {
+        let new_todo_list: TodoList = TodoList {name: name.to_string(), todos: Vec::new()};
         new_todo_list
     }
 
@@ -73,13 +76,15 @@ impl TodoList {
     fn save_list(&self, mut file: File) -> std::io::Result<()> {
         // serialize the list into json
         // write to a *.json file
-        let json = serde_json::to_string(&self.todos);
+
+        let json = serde_json::to_string(&self);
         file.write_all(json?.as_bytes()).unwrap();
         Ok(())
     }
 
     fn save(&self) {
-        let file = create_file("lists/todo_list.json");
+        let path = format!("lists/{}.json", self.name);
+        let file = create_file(&path);
         let _ = self.save_list(file);
     }
 
@@ -90,30 +95,54 @@ impl TodoList {
     }
 }
 
-fn todos_exist() -> bool {
-    // returns true if there todos already in the './lists' directory
+fn list_todo_lists() -> Vec<String> {
+    // Read lists dir and list out all potential lists to load
     let paths = fs::read_dir("./lists/").unwrap();
+    let mut todo_lists: Vec<String> = Vec::new();
 
-    if let Some(path) = paths.into_iter().next() {
-        true
-    }else {
-        false
+    for path in paths {
+        if let Ok(entry) = path {
+            if let Ok(file_type) = entry.file_type() {
+                if file_type.is_file() {
+                    let file_name = entry.file_name().into_string().unwrap();
+                    let split_name: Vec<String> = file_name.split('.').map(|s| s.to_string()).collect();
+                    if let Some(first_part) = split_name.get(0) {
+                        todo_lists.push(first_part.to_string());
+                    }
+                }
+            }
+        }
     }
+
+    todo_lists
 }
 
+
 fn load_list(fname: &str) -> TodoList {
-    if todos_exist() {
-        let contents = fs::read_to_string(fname).expect("Unable to read file");
-        let todo_list: TodoList = TodoList { 
-            todos: serde_json::from_str(&contents).expect("JSON Parsing Error"),
-        };
-        todo_list
-    }else {
+    let path = format!("/lists/{}.json", fname);
+    let contents = fs::read_to_string(path).expect("Unable to read file");
+    let todo_list: TodoList = serde_json::from_str(&contents).expect("JSON Parsing Error");
+    todo_list
+}
 
-        let todo_list = TodoList::new();
-        todo_list
+fn load_lists() -> TodoList {
+    // GOAL: Give a selection of lists to load or allow user to create new list if they choose to, or no other lists exist.
+    let lists: Vec<String> = list_todo_lists();
+    let mut options: Vec<String> = vec!["Create New List".to_string()];
+    options.extend(lists);
+    let resp = Select::new("What would you like to do?", options.clone()).raw_prompt();
+    
+    match resp {
+        Ok(ListOption{ value, .. }) if value == "Create New List" => {
+            let name = Text::new("Name your List:").prompt().unwrap();
+            TodoList::new(&name)
+        },
+        Ok(ListOption{ value, .. }) if options.contains(&value) => {
+            load_list(&value)
+        },
+        Ok(_) => panic!(),
+        Err(_) => panic!(),
     }
-
 }
 
 fn create_file (fname: &str) -> File {
@@ -133,6 +162,28 @@ fn create_file (fname: &str) -> File {
     }
 }   
 
+fn delete_file () {
+    let lists: Vec<String> = list_todo_lists();
+    let resp = Select::new("are you sure you want to prune, you can't reverse this action?", lists.clone()).raw_prompt();
+    let file_path = format!("/lists/{}.json", resp.unwrap());
+    
+    match resp {
+        Ok(ListOption{ value, .. }) if lists.contains(&value) => {
+            let options = vec!["Yes".to_string(), "No".to_string()];
+            let resp = Select::new("are you sure you want to prune, you can't reverse this action?", options).raw_prompt();
+            
+            match resp {
+                Ok(ListOption{ value, .. }) if value == "Yes" => fs::remove_file(file_path).unwrap(),
+                Ok(ListOption{ value, .. }) if value == "No" => (),
+                Ok(_) => println!("Also not an answer"),
+                Err(_) => println!("That's not an answer..."),
+            }
+        },
+        Ok(_) => panic!(),
+        Err(_) => panic!(),
+    }
+}
+
 fn create_folder (dirname: &str) {
     let path = Path::new(dirname);
 
@@ -148,17 +199,17 @@ fn main() {
     // todo "class" that keeps track of tasks name, and description, 
     // and whether it has been completed. bonus points for timing
     
-    // TODO: Create serialization and write list to disk (serde and serde_json)
-    
     create_folder("lists");
+    // let mut list = load_list(list_name);
 
-    let mut list = load_list("lists/todo_list.json");
+    // has user select a list or create a new list.
+    let mut list = load_lists();
 
     // if cont == true loop continues
     let cont: bool = true;
 
     while cont {
-        let options: Vec<_> = vec!["save list".to_string(), "add new todo".to_string(), "prune list".to_string(), "close list".to_string()]
+        let options: Vec<_> = vec!["save list".to_string(), "add new todo".to_string(), "prune list".to_string(), "switch lists".to_string(), "delete_list".to_string(), "close app".to_string()]
             .into_iter()
             .chain(list
                     .todos
@@ -185,8 +236,11 @@ fn main() {
                     Err(_) => println!("That's not an answer..."),
                 }
             },
-            Ok(ListOption{value, ..}) if value == "close list" => break,
-            Ok(ListOption{index , ..}) => list.get_todo(index-4).check(),
+            Ok(ListOption{value, ..}) if value == "switch lists" => {
+                list = load_lists();
+            },
+            Ok(ListOption{value, ..}) if value == "close app" => break,
+            Ok(ListOption{index , ..}) => list.get_todo(index-5).check(),
             Err(_) => println!("Hmm, that didn't work..."),
         }
     }
