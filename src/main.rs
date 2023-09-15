@@ -27,6 +27,7 @@ impl Todo {
     fn check(&mut self) {
         self.is_completed = !self.is_completed;
     }
+
 }
 
 impl fmt::Display for Todo {
@@ -82,6 +83,11 @@ impl TodoList {
         let _ = self.save_list(file);
     }
 
+    fn prune_list(&mut self){
+        // every todo that is checked off is deleted from the list.
+        self.todos.retain(|todo| !todo.is_completed);
+        self.save()
+    }
 }
 
 fn todos_exist() -> bool {
@@ -104,7 +110,7 @@ fn load_list(fname: &str) -> TodoList {
         todo_list
     }else {
 
-        let mut todo_list = TodoList::new();
+        let todo_list = TodoList::new();
         todo_list
     }
 
@@ -152,7 +158,7 @@ fn main() {
     let cont: bool = true;
 
     while cont {
-        let options: Vec<_> = vec!["save list".to_string(), "add new todo".to_string(), "close list".to_string()]
+        let options: Vec<_> = vec!["save list".to_string(), "add new todo".to_string(), "prune list".to_string(), "close list".to_string()]
             .into_iter()
             .chain(list
                     .todos
@@ -163,10 +169,24 @@ fn main() {
         let ans = Select::new("What do you want to do?", options).raw_prompt();
 
         match ans {
-            Ok(ListOption{value, ..}) if value == "save list" => list.save(),
+            Ok(ListOption{value, ..}) if value == "save list" => {
+                list.save();
+                println!("List Saved!");
+            },
             Ok(ListOption{value, ..}) if value == "add new todo" => list.create_todo(),
+            Ok(ListOption{value, ..}) if value == "prune list" => {
+                let options = vec!["Yes".to_string(), "No".to_string()];
+                let resp = Select::new("are you sure you want to prune, you can't reverse this action?", options).raw_prompt();
+                
+                match resp {
+                    Ok(ListOption{ value, .. }) if value == "Yes" => list.prune_list(),
+                    Ok(ListOption{ value, .. }) if value == "No" => continue,
+                    Ok(_) => println!("Also not an answer"),
+                    Err(_) => println!("That's not an answer..."),
+                }
+            },
             Ok(ListOption{value, ..}) if value == "close list" => break,
-            Ok(ListOption{index , ..}) => list.get_todo(index-3).check(),
+            Ok(ListOption{index , ..}) => list.get_todo(index-4).check(),
             Err(_) => println!("Hmm, that didn't work..."),
         }
     }
