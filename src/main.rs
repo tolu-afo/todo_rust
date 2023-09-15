@@ -69,13 +69,10 @@ impl TodoList {
         self.new_todo(title, desc);
     }
 
-    fn save_list(&self, file: File) -> std::io::Result<()> {
+    fn save_list(&self, mut file: File) -> std::io::Result<()> {
         // serialize the list into json
         // write to a *.json file
         let json = serde_json::to_string(&self.todos);
-        let mut file = OpenOptions::new()
-            .append(true)
-            .open("lists/todo_list.json")?;
         file.write_all(json?.as_bytes()).unwrap();
         Ok(())
     }
@@ -85,9 +82,32 @@ impl TodoList {
         let _ = self.save_list(file);
     }
 
-    fn load_list(&self) {
-        
+}
+
+fn todos_exist() -> bool {
+    // returns true if there todos already in the './lists' directory
+    let paths = fs::read_dir("./lists/").unwrap();
+
+    if let Some(path) = paths.into_iter().next() {
+        true
+    }else {
+        false
     }
+}
+
+fn load_list(fname: &str) -> TodoList {
+    if todos_exist() {
+        let contents = fs::read_to_string(fname).expect("Unable to read file");
+        let todo_list: TodoList = TodoList { 
+            todos: serde_json::from_str(&contents).expect("JSON Parsing Error"),
+        };
+        todo_list
+    }else {
+
+        let mut todo_list = TodoList::new();
+        todo_list
+    }
+
 }
 
 fn create_file (fname: &str) -> File {
@@ -95,10 +115,15 @@ fn create_file (fname: &str) -> File {
     let path = Path::new(fname);
     
     if path.exists() == false {
-        let mut file = File::create(fname).unwrap();
+        let file = File::create(fname).unwrap();
         file
     }else {
-        // TODO: open the file that already exists to pass to the save_list function
+        let file = OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(fname)
+            .unwrap();
+        file
     }
 }   
 
@@ -109,6 +134,9 @@ fn create_folder (dirname: &str) {
         fs::create_dir(dirname).unwrap();
     }
 }
+
+
+
 fn main() {
     // Goal: Terminal based ToDo app
     // todo "class" that keeps track of tasks name, and description, 
@@ -118,7 +146,7 @@ fn main() {
     
     create_folder("lists");
 
-    let mut list = TodoList::new();
+    let mut list = load_list("lists/todo_list.json");
 
     // if cont == true loop continues
     let cont: bool = true;
@@ -138,7 +166,7 @@ fn main() {
             Ok(ListOption{value, ..}) if value == "save list" => list.save(),
             Ok(ListOption{value, ..}) if value == "add new todo" => list.create_todo(),
             Ok(ListOption{value, ..}) if value == "close list" => break,
-            Ok(ListOption{index , ..}) => list.get_todo(index-2).check(),
+            Ok(ListOption{index , ..}) => list.get_todo(index-3).check(),
             Err(_) => println!("Hmm, that didn't work..."),
         }
     }
