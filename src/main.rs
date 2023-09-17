@@ -1,11 +1,10 @@
-use clap::ValueHint;
-use inquire::{Text, InquireError, Select, list_option::ListOption};
+use inquire::{Text, Select, list_option::ListOption};
 use core::panic;
 use std::fmt::{self, Formatter};
 use std::fs::{self, OpenOptions, File};
 use std::io::Write;
 use serde::{Serialize, Deserialize};
-use serde_json::{Result, to_string};
+use serde_json::{Result, to_string, value};
 use std::path::Path;
 
 #[derive(Debug)]
@@ -71,6 +70,7 @@ impl TodoList {
         let desc = Text::new("Describe your todo:").prompt().unwrap();
 
         self.new_todo(title, desc);
+        self.save();
     }
 
     fn save_list(&self, mut file: File) -> std::io::Result<()> {
@@ -83,7 +83,7 @@ impl TodoList {
     }
 
     fn save(&self) {
-        let path = format!("lists/{}.json", self.name);
+        let path = format!("./lists/{}.json", self.name);
         let file = create_file(&path);
         let _ = self.save_list(file);
     }
@@ -91,7 +91,7 @@ impl TodoList {
     fn prune_list(&mut self){
         // every todo that is checked off is deleted from the list.
         self.todos.retain(|todo| !todo.is_completed);
-        self.save()
+        self.save();
     }
 }
 
@@ -119,7 +119,8 @@ fn list_todo_lists() -> Vec<String> {
 
 
 fn load_list(fname: &str) -> TodoList {
-    let path = format!("/lists/{}.json", fname);
+    let path = format!("./lists/{}.json", fname);
+    println!("{}", path);
     let contents = fs::read_to_string(path).expect("Unable to read file");
     let todo_list: TodoList = serde_json::from_str(&contents).expect("JSON Parsing Error");
     todo_list
@@ -127,15 +128,25 @@ fn load_list(fname: &str) -> TodoList {
 
 fn load_lists() -> TodoList {
     // GOAL: Give a selection of lists to load or allow user to create new list if they choose to, or no other lists exist.
+    println!("List Manager");
     let lists: Vec<String> = list_todo_lists();
     let mut options: Vec<String> = vec!["Create New List".to_string()];
+    if lists.len() > 0 {
+        options.extend(["Delete List".to_string()]);
+    }
     options.extend(lists);
     let resp = Select::new("What would you like to do?", options.clone()).raw_prompt();
     
     match resp {
         Ok(ListOption{ value, .. }) if value == "Create New List" => {
             let name = Text::new("Name your List:").prompt().unwrap();
-            TodoList::new(&name)
+            let list = TodoList::new(&name);
+            list.save();
+            list
+        },
+        Ok(ListOption{value, ..}) if value == "Delete List" => {
+            delete_list();
+            load_lists()
         },
         Ok(ListOption{ value, .. }) if options.contains(&value) => {
             load_list(&value)
@@ -162,15 +173,15 @@ fn create_file (fname: &str) -> File {
     }
 }   
 
-fn delete_file () {
+fn delete_list () {
     let lists: Vec<String> = list_todo_lists();
-    let resp = Select::new("are you sure you want to prune, you can't reverse this action?", lists.clone()).raw_prompt();
-    let file_path = format!("/lists/{}.json", resp.unwrap());
+    let resp = Select::new("Which List do you want to delete?", lists.clone()).raw_prompt();
+    let file_path = format!("./lists/{}.json", resp.as_ref().unwrap());
     
     match resp {
         Ok(ListOption{ value, .. }) if lists.contains(&value) => {
             let options = vec!["Yes".to_string(), "No".to_string()];
-            let resp = Select::new("are you sure you want to prune, you can't reverse this action?", options).raw_prompt();
+            let resp = Select::new("are you sure you want to delete this list? You can't reverse this action.", options).raw_prompt();
             
             match resp {
                 Ok(ListOption{ value, .. }) if value == "Yes" => fs::remove_file(file_path).unwrap(),
@@ -203,13 +214,14 @@ fn main() {
     // let mut list = load_list(list_name);
 
     // has user select a list or create a new list.
+    println!("Welcome to ToluAfo's Todo Lists in Rust");
     let mut list = load_lists();
 
     // if cont == true loop continues
     let cont: bool = true;
 
     while cont {
-        let options: Vec<_> = vec!["save list".to_string(), "add new todo".to_string(), "prune list".to_string(), "switch lists".to_string(), "delete_list".to_string(), "close app".to_string()]
+        let options: Vec<_> = vec!["manage lists".to_string(), "add new todo".to_string(), "prune list".to_string(), "close app".to_string()]
             .into_iter()
             .chain(list
                     .todos
@@ -220,14 +232,10 @@ fn main() {
         let ans = Select::new("What do you want to do?", options).raw_prompt();
 
         match ans {
-            Ok(ListOption{value, ..}) if value == "save list" => {
-                list.save();
-                println!("List Saved!");
-            },
             Ok(ListOption{value, ..}) if value == "add new todo" => list.create_todo(),
             Ok(ListOption{value, ..}) if value == "prune list" => {
                 let options = vec!["Yes".to_string(), "No".to_string()];
-                let resp = Select::new("are you sure you want to prune, you can't reverse this action?", options).raw_prompt();
+                let resp = Select::new("Are you sure you want to prune? You can't reverse this action.", options).raw_prompt();
                 
                 match resp {
                     Ok(ListOption{ value, .. }) if value == "Yes" => list.prune_list(),
@@ -236,11 +244,14 @@ fn main() {
                     Err(_) => println!("That's not an answer..."),
                 }
             },
-            Ok(ListOption{value, ..}) if value == "switch lists" => {
+            Ok(ListOption{value, ..}) if value == "manage lists" => {
                 list = load_lists();
             },
             Ok(ListOption{value, ..}) if value == "close app" => break,
-            Ok(ListOption{index , ..}) => list.get_todo(index-5).check(),
+            Ok(ListOption{index , ..}) => {
+                list.get_todo(index-4).check();
+                list.save();
+            },
             Err(_) => println!("Hmm, that didn't work..."),
         }
     }
